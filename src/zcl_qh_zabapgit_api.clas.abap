@@ -37,7 +37,7 @@ CLASS zcl_qh_zabapgit_api IMPLEMENTATION.
           lv_branch TYPE zif_abapgit_persistence=>ty_repo-branch_name,
           ls_data   TYPE REF TO data,
           lo_object TYPE REF TO zcl_abapgit_repo,
-          lv_key TYPE ZIF_ABAPGIT_PERSISTENCE=>TY_VALUE.
+          lv_key    TYPE zif_abapgit_persistence=>ty_value.
 
     FIELD-SYMBOLS: <ls_list> LIKE LINE OF mt_list,
                    <ls_data> TYPE LINE OF zif_abapgit_persistence=>tt_repo.
@@ -53,9 +53,10 @@ CLASS zcl_qh_zabapgit_api IMPLEMENTATION.
         lv_key = <ls_list>->get_key(  ).
         lo_repo ?= zcl_abapgit_repo_srv=>get_instance( )->get( lv_key ).
 * Make sure to refresh the repository before changing the branch.
-        lo_repo->REFRESH(  ).
+        lo_repo->refresh(  ).
         CONCATENATE 'refs/heads/' iv_branch INTO lv_branch.
         lo_repo->set_branch_name( lv_branch ).
+        ex_subrc = 0.
 
       CATCH zcx_abapgit_exception.
 
@@ -120,6 +121,8 @@ CLASS zcl_qh_zabapgit_api IMPLEMENTATION.
       sy-subrc = sy-subrc.
 
     ENDIF.
+
+    ex_subrc = 0.
 
 
   ENDMETHOD.
@@ -203,20 +206,28 @@ CLASS zcl_qh_zabapgit_api IMPLEMENTATION.
     DATA(lv_action) = server->request->get_form_field( 'action' ) ##NO_TEXT .
     DATA(lv_repo) = server->request->get_form_field( 'repository' ) ##NO_TEXT .
     TRANSLATE lv_action TO UPPER CASE.
-    IF lv_action = 'PULL'.
+
+* Let's not trust anyone and assume a bad outcome always
+    lv_subrc = 4.
+
+    IF lv_action = 'PULL' AND lv_repo IS NOT INITIAL.
       CALL METHOD me->create_background_job
         EXPORTING
           iv_repo  = lv_repo
         IMPORTING
           ex_subrc = lv_subrc.
-    ELSEIF lv_action = 'BRANCH'.
+    ELSEIF lv_action = 'BRANCH' AND lv_repo IS NOT INITIAL.
       lv_branch = server->request->get_form_field( 'branch' ) ##NO_TEXT .
-      CALL METHOD me->change_branch
-        EXPORTING
-          iv_branch = lv_branch
-          iv_repo   = lv_repo
-        IMPORTING
-          ex_subrc  = lv_subrc.
+      IF lv_branch IS NOT INITIAL.
+        CALL METHOD me->change_branch
+          EXPORTING
+            iv_branch = lv_branch
+            iv_repo   = lv_repo
+          IMPORTING
+            ex_subrc  = lv_subrc.
+      ELSE.
+        lv_subrc = 4.
+      ENDIF.
     ENDIF.
     IF lv_subrc = 0.
       lv_statuscode = 200.
