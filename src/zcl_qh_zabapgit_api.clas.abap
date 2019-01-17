@@ -135,8 +135,6 @@ CLASS zcl_qh_zabapgit_api IMPLEMENTATION.
 
     FIELD-SYMBOLS: <ls_list> LIKE LINE OF lt_list.
 
-
-
     lt_list = zcl_abapgit_persist_factory=>get_repo( )->list( ).
 
     LOOP AT lt_list ASSIGNING <ls_list>.
@@ -157,30 +155,6 @@ CLASS zcl_qh_zabapgit_api IMPLEMENTATION.
 
 
   METHOD if_http_extension~handle_request.
-*&---------------------------------------------------------------------*
-*& Class       ZCL_QH_ZABAPGIT_API                                     *
-*&---------------------------------------------------------------------*
-* Program Title:    API class for AbapGit                     *
-*                                                                      *
-* Agency:           Queensland Health                                  *
-*                                                                      *
-* Type of program:  Class                                              *
-* Description:      This class handles HTTP requests from Gitlab       *
-*                   to submit a background job that pulls the code     *
-* Author:           Jakob Kjaer                                        *
-* Creation Date:    January 2019                                       *
-* R/3 Release:      QHHR33                                             *
-*----------------------------------------------------------------------*
-*                        MODIFICATION HISTORY                          *
-*                        ====================                          *
-*----------------------------------------------------------------------*
-* Change Ref Date       User Id   Transport                            *
-*----------------------------------------------------------------------*
-* 13003148   20/11/2018 80000154  HIDK901211                           *
-*            Version 1 of service created                              *
-*----------------------------------------------------------------------*
-
-
     DATA:
       lo_http_client TYPE REF TO if_http_client,
       lv_service     TYPE string,
@@ -210,7 +184,7 @@ CLASS zcl_qh_zabapgit_api IMPLEMENTATION.
 * Let's not trust anyone and assume a bad outcome always
     lv_subrc = 4.
 
-    IF lv_action = 'PULL' AND lv_repo IS NOT INITIAL.
+    IF lv_action = 'BACKGROUND' AND lv_repo IS NOT INITIAL.
       CALL METHOD me->create_background_job
         EXPORTING
           iv_repo  = lv_repo
@@ -225,6 +199,13 @@ CLASS zcl_qh_zabapgit_api IMPLEMENTATION.
             iv_repo   = lv_repo
           IMPORTING
             ex_subrc  = lv_subrc.
+      ELSEIF lv_action = 'PULL' AND lv_repo IS NOT INITIAL.
+
+*        CALL METHOD me->pull
+*          EXPORTING
+*            iv_repo   = lv_repo
+*          IMPORTING
+*            ex_subrc  = lv_subrc.
       ELSE.
         lv_subrc = 4.
       ENDIF.
