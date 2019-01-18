@@ -12,6 +12,8 @@ CLASS zcl_zabapgit_api DEFINITION
   PRIVATE SECTION.
 
     DATA mt_list TYPE zif_abapgit_definitions=>ty_repo_ref_tt .
+    DATA mv_username TYPE string.
+    DATA mv_password TYPE string.
 
     METHODS create_background_job
       IMPORTING
@@ -39,6 +41,10 @@ CLASS zcl_zabapgit_api DEFINITION
         !iv_repo  TYPE string
       EXPORTING
         !ex_subrc TYPE subrc .
+
+    METHODS authenticate_user
+      IMPORTING !iv_repo  TYPE  REF TO zcl_abapgit_repo_online
+      EXPORTING !ex_subrc TYPE subrc.
 
 ENDCLASS.
 
@@ -192,7 +198,9 @@ CLASS zcl_zabapgit_api IMPLEMENTATION.
       ls_reason      TYPE string,
       l_key(44)      TYPE c,
       lv_subrc       TYPE subrc,
-      lv_statuscode  TYPE i.
+      lv_statuscode  TYPE i,
+      lv_username    TYPE uname,
+      lv_password    TYPE string.
 
 
     ls_encoding = TEXT-003.
@@ -205,10 +213,14 @@ CLASS zcl_zabapgit_api IMPLEMENTATION.
 
     DATA(lv_action) = server->request->get_form_field( 'action' ) ##NO_TEXT .
     DATA(lv_repo) = server->request->get_form_field( 'repository' ) ##NO_TEXT .
+    mv_username = server->request->get_form_field( 'username' ).
+    mv_password = server->request->get_form_field( 'password' ).
     TRANSLATE lv_action TO UPPER CASE.
 
 * Let's not trust anyone and assume a bad outcome always
     lv_subrc = 4.
+
+
 
     IF lv_action = 'BACKGROUND' AND lv_repo IS NOT INITIAL.
       CALL METHOD me->create_background_job
@@ -225,17 +237,30 @@ CLASS zcl_zabapgit_api IMPLEMENTATION.
             iv_repo   = lv_repo
           IMPORTING
             ex_subrc  = lv_subrc.
-      ELSEIF lv_action = 'PULL' AND lv_repo IS NOT INITIAL.
-
-*        CALL METHOD me->pull
-*          EXPORTING
-*            iv_repo   = lv_repo
-*          IMPORTING
-*            ex_subrc  = lv_subrc.
-      ELSE.
-        lv_subrc = 4.
       ENDIF.
+    ELSEIF lv_action = 'PULL' AND lv_repo IS NOT INITIAL.
+
+      CALL METHOD me->pull
+        EXPORTING
+          iv_repo  = lv_repo
+        IMPORTING
+          ex_subrc = lv_subrc.
+
+    ELSEIF lv_action = 'REFRESH' AND lv_repo IS NOT INITIAL.
+
+      CALL METHOD me->refresh
+        EXPORTING
+          iv_repo  = lv_repo
+        IMPORTING
+          ex_subrc = lv_subrc.
+
+    ELSEIF lv_action = 'LIST' AND lv_repo IS NOT INITIAL.
+
+* Figure out how to add repo list to body.
+    ELSE.
+      lv_subrc = 4.
     ENDIF.
+
     IF lv_subrc = 0.
       lv_statuscode = 200.
     ELSE.
@@ -284,6 +309,15 @@ CLASS zcl_zabapgit_api IMPLEMENTATION.
 * Get the repository key
         lv_key = <ls_list>->get_key(  ).
         lo_repo ?= zcl_abapgit_repo_srv=>get_instance( )->get( lv_key ).
+
+
+        me->authenticate_user(
+                    EXPORTING iv_repo = lo_repo
+                    IMPORTING ex_subrc = ex_subrc
+                    ).
+        IF ex_subrc IS NOT INITIAL.
+          lo_repo->refresh(  ).
+        ENDIF.
 * Get the checks and the pull.
         ls_checks = lo_repo->deserialize_checks( ).
 
@@ -314,11 +348,32 @@ CLASS zcl_zabapgit_api IMPLEMENTATION.
 * Get the repository key
         lv_key = <ls_list>->get_key(  ).
         lo_repo ?= zcl_abapgit_repo_srv=>get_instance( )->get( lv_key ).
+        me->authenticate_user(
+            EXPORTING iv_repo = lo_repo
+            IMPORTING ex_subrc = ex_subrc
+            ).
 * Make sure to refresh the repository before changing the branch.
-        lo_repo->refresh(  ).
+        IF ex_subrc IS NOT INITIAL.
+          lo_repo->refresh(  ).
+        ENDIF.
       CATCH zcx_abapgit_exception.
         ex_subrc = 4.
     ENDTRY.
+  ENDMETHOD.
+
+  METHOD authenticate_user.
+    IF mv_username IS NOT INITIAL AND mv_password IS NOT INITIAL.
+      TRY.
+          zcl_abapgit_login_manager=>set(
+             iv_uri      = iv_repo->get_url( )
+             iv_username = mv_username
+             iv_password = mv_password
+             ).
+        CATCH zcx_abapgit_exception.
+          ex_subrc = 4.
+      ENDTRY.
+
+    ENDIF.
   ENDMETHOD.
 
 
